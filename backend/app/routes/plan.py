@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from app.models.schemas import GeneratePlanRequest, GeneratePlanResponse, Question
 from app.services.deadline_service import calculate_deadline_mode
+from app.services.groq_service import generate_questions_from_llm
 
 router = APIRouter()
 
@@ -9,18 +10,25 @@ async def generate_plan(request: GeneratePlanRequest):
     # Calculate mode based on exam deadline
     mode = calculate_deadline_mode(request.examDate)
     
-    # Dummy response for STEP 3
-    dummy_question = Question(
-        question="What is FastAPI?",
-        type="theory",
-        difficulty="easy",
-        probability=0.95,
-        priority="must",
-        solution="FastAPI is a modern, fast (high-performance), web framework for building APIs with Python 3.8+ based on standard Python type hints."
+    # STEP 4: Call Groq API to generate questions
+    raw_questions = generate_questions_from_llm(
+        subject=request.subject,
+        topics=request.topics,
+        mode=mode,
+        pdf_text=request.pdfText
     )
+    
+    # Parse dicts to Question Pydantic models
+    questions = []
+    for q in raw_questions:
+        try:
+            questions.append(Question(**q))
+        except Exception as e:
+            print(f"Error parsing question: {e}")
+            pass
     
     return GeneratePlanResponse(
         mode=mode,
-        strategy=f"You are in {mode.upper()} mode based on your exam date. Focus on these priority questions.",
-        questions=[dummy_question]
+        strategy=f"You are in {mode.upper()} mode based on your exam date. Focus on these {len(questions)} priority questions.",
+        questions=questions
     )
