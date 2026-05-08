@@ -8,6 +8,7 @@ from app.services.groq_service import (
     _build_fallback_questions,
 )
 from app.services.ml_service import compute_topic_weights_tfidf, merge_weights, predict_question_types_batch
+from app.services.spaced_repetition_service import generate_study_schedule
 from app.utils.store import record_plan
 
 logger = logging.getLogger("prepzo.plan")
@@ -69,19 +70,20 @@ async def generate_plan(request: GeneratePlanRequest):
     else:
         weights = rule_weights
 
-    # Step 4: Predict question types per topic using Naive Bayes
+    # Step 4: ML Model 2 — Predict question types per topic using Naive Bayes
     raw_insights = predict_question_types_batch(request.topics)
     topic_insights = {
         topic: TopicInsight(**data) for topic, data in raw_insights.items()
     }
 
-    # Step 5: Generate questions — pass weights so prompt reflects topic importance
+    # Step 5: Generate questions — pass weights + ML insights so Groq obeys predictions
     raw_questions = generate_questions(
         subject=request.subject,
         topics=request.topics,
         mode=mode,
         weights=weights,
         pdf_text=request.pdfText,
+        topic_insights=topic_insights,
     )
 
     # Step 6: Apply mode-aware priority scoring using blended weights
@@ -118,7 +120,15 @@ async def generate_plan(request: GeneratePlanRequest):
     # Step 8: Derive focusTopics from actual AI output + weights (never empty)
     focus_topics = _compute_focus_topics(questions, weights, mode)
 
-    # Step 9: Record analytics (single call — no double counting)
+    # Step 9: ML Model 4 — Generate SM-2 Spaced Repetition Study Schedule
+    study_schedule = generate_study_schedule(
+        topics=request.topics,
+        exam_date=request.examDate,
+        mode=mode,
+        weights=weights,
+    )
+
+    # Step 10: Record analytics (single call — no double counting)
     record_plan(request.subject, mode)
 
     return GeneratePlanResponse(
@@ -127,4 +137,5 @@ async def generate_plan(request: GeneratePlanRequest):
         strategy=build_strategy(mode),
         questions=questions,
         topicInsights=topic_insights,
+        studySchedule=study_schedule,
     )

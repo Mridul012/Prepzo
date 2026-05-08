@@ -75,9 +75,82 @@ class TopicInsight(BaseModel):
     confidence: Dict[str, float]
 
 
+# ─────────────────────────────────────────────
+# ML Model 3: Topic Clustering
+# ─────────────────────────────────────────────
+
+class TopicCluster(BaseModel):
+    label: str
+    keywords: List[str]
+    segment_count: int
+    confidence: float
+
+
+class ClusteringResult(BaseModel):
+    clusters: List[TopicCluster] = []
+    suggested_topics: List[str] = []
+
+
+# ─────────────────────────────────────────────
+# ML Model 4: Spaced Repetition Schedule
+# ─────────────────────────────────────────────
+
+class ScheduleTopicEntry(BaseModel):
+    name: str
+    action: str  # learn | review | practice
+    duration_minutes: int
+    priority: str  # high | medium | low
+
+
+class ScheduleDay(BaseModel):
+    day: int
+    date: str
+    label: str
+    topics: List[ScheduleTopicEntry]
+    totalMinutes: int
+    tip: str
+
+
+# ─────────────────────────────────────────────
+# ML Model 5: Pattern Analysis
+# ─────────────────────────────────────────────
+
+class QuestionPattern(BaseModel):
+    pattern: str
+    category: str
+    frequency: int
+    probability: float
+    similar_questions: List[str] = []
+
+
+class TopicCorrelation(BaseModel):
+    most_common_type: str
+    frequency: int
+
+
+class PatternAnalysisResult(BaseModel):
+    patterns: List[QuestionPattern] = []
+    categoryBreakdown: Dict[str, int] = {}
+    topicCorrelation: Dict[str, TopicCorrelation] = {}
+    totalQuestionsAnalyzed: int = 0
+
+
+# ─────────────────────────────────────────────
+# Response Models
+# ─────────────────────────────────────────────
+
+class UploadPdfResponse(BaseModel):
+    filename: str
+    extracted_text_preview: str
+    detectedTopics: List[str] = []
+    clustering: Optional[ClusteringResult] = None
+    patternAnalysis: Optional[PatternAnalysisResult] = None
+
+
 class GeneratePlanResponse(BaseModel):
     mode: ExamMode
     focusTopics: Optional[List[str]] = None
     strategy: str
     questions: List[Question]
     topicInsights: Optional[Dict[str, TopicInsight]] = None
+    studySchedule: Optional[List[ScheduleDay]] = None

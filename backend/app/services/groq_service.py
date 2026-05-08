@@ -171,19 +171,26 @@ def build_prompt(
     mode: str,
     weights: dict = None,
     pdf_text: str = None,
+    topic_insights: dict = None,
 ) -> str:
     cfg = MODE_CONFIG.get(mode, MODE_CONFIG["balanced"])
     q_min, q_max = cfg["q_min"], cfg["q_max"]
 
     if weights:
         sorted_topics = sorted(weights.items(), key=lambda x: -x[1])
-        topic_lines = "\n".join(
-            f"  - {t} (importance: {w:.2f})" for t, w in sorted_topics
-        )
+        topic_lines_list = []
+        for t, w in sorted_topics:
+            insight = f" [MUST USE QUESTION TYPE: {topic_insights[t].predicted_type}]" if topic_insights and t in topic_insights else ""
+            topic_lines_list.append(f"  - {t} (importance: {w:.2f}){insight}")
+        topic_lines = "\n".join(topic_lines_list)
         high_priority = [t for t, w in sorted_topics if w >= 0.8]
         medium_priority = [t for t, w in sorted_topics if 0.4 <= w < 0.8]
     else:
-        topic_lines = "\n".join(f"  - {t}" for t in topics)
+        topic_lines_list = []
+        for t in topics:
+            insight = f" [MUST USE QUESTION TYPE: {topic_insights[t].predicted_type}]" if topic_insights and t in topic_insights else ""
+            topic_lines_list.append(f"  - {t}{insight}")
+        topic_lines = "\n".join(topic_lines_list)
         high_priority = topics[: max(1, len(topics) // 3)]
         medium_priority = topics[len(high_priority) :]
 
@@ -277,7 +284,8 @@ ABSOLUTE RULES — violating any of these invalidates your response:
 6. "topic" must exactly match one of the topic names listed above.
 7. Questions must be specific and testable — follow the format palette, not generic templates.
 8. No two questions may test the same specific concept or have >70% wording overlap.
-9. Solutions must be factually accurate, exam-oriented, and match the solution format above."""
+9. Solutions must be factually accurate, exam-oriented, and match the solution format above.
+10. If a topic has a [MUST USE QUESTION TYPE: <type>] tag, questions for that topic MUST use that exact type."""
 
 
 def build_retry_prompt(subject: str, topics: list, mode: str) -> str:
@@ -642,6 +650,7 @@ def generate_questions(
     mode: str,
     weights: dict = None,
     pdf_text: str = None,
+    topic_insights: dict = None,
 ) -> list:
     """
     Generate exam questions with retry logic and a guaranteed non-empty result.
@@ -660,7 +669,7 @@ def generate_questions(
     max_tok = cfg["max_tokens"]
 
     # Attempt 1 — full prompt
-    prompt = build_prompt(subject, topics, mode, weights, pdf_text)
+    prompt = build_prompt(subject, topics, mode, weights, pdf_text, topic_insights)
     logger.info("[Groq] Attempt 1 | mode=%s | max_tokens=%d", mode, max_tok)
     questions = _call_groq_questions(prompt, topics, max_tokens=max_tok)
 

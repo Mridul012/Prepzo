@@ -6,6 +6,7 @@ import ModeBanner from '../components/ModeBanner';
 import FilterBar from '../components/FilterBar';
 import QuestionCard from '../components/QuestionCard';
 import TopicInsightsPanel from '../components/TopicInsightsPanel';
+import StudySchedulePanel from '../components/StudySchedulePanel';
 
 const pageVariants = {
   initial: { opacity: 0 },
@@ -247,6 +248,9 @@ export default function ResultPage() {
 
         {/* Question Stats */}
         <QuestionStats questions={plan.questions} />
+
+        {/* SM-2 Spaced Repetition Study Schedule */}
+        <StudySchedulePanel schedule={plan.studySchedule} />
 
         {/* Topic Insights from ML */}
         <TopicInsightsPanel topicInsights={plan.topicInsights} />

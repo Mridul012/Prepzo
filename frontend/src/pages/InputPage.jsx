@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import FloatingOrbs from '../three/FloatingOrbs';
 import Navbar from '../components/Navbar';
 import TopicChip from '../components/TopicChip';
+import ClusteringPanel from '../components/ClusteringPanel';
+import PatternAnalysisPanel from '../components/PatternAnalysisPanel';
 import { generatePlan, uploadPdf } from '../services/api';
 
 const pageVariants = {
@@ -44,6 +46,8 @@ export default function InputPage() {
 
   const [pdfText, setPdfText] = useState('');
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [clustering, setClustering] = useState(null);
+  const [patternAnalysis, setPatternAnalysis] = useState(null);
 
   const daysRemaining = useMemo(() => calculateDaysRemaining(examDate), [examDate]);
 
@@ -93,6 +97,14 @@ export default function InputPage() {
       setPdfText(response.data.extracted_text_preview || '');
       if (response.data.detectedTopics && response.data.detectedTopics.length > 0) {
         setTopics((prev) => [...new Set([...prev, ...response.data.detectedTopics])]);
+      }
+      // ML Model 3: K-Means Clustering results
+      if (response.data.clustering) {
+        setClustering(response.data.clustering);
+      }
+      // ML Model 5: Pattern Analysis results
+      if (response.data.patternAnalysis) {
+        setPatternAnalysis(response.data.patternAnalysis);
       }
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to process PDF.');
@@ -448,6 +460,19 @@ export default function InputPage() {
             )}
           </div>
         </div>
+
+        {/* ML Model 3: K-Means Topic Clustering */}
+        <ClusteringPanel
+          clustering={clustering}
+          onAddTopic={(topic) => {
+            if (!topics.includes(topic)) {
+              setTopics((prev) => [...prev, topic]);
+            }
+          }}
+        />
+
+        {/* ML Model 5: Cosine Similarity Pattern Analysis */}
+        <PatternAnalysisPanel analysis={patternAnalysis} />
 
         <button
           onClick={handleGeneratePlan}
