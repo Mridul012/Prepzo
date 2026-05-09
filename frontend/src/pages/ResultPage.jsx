@@ -9,6 +9,7 @@ import FilterBar from '../components/FilterBar';
 import QuestionCard from '../components/QuestionCard';
 import TopicInsightsPanel from '../components/TopicInsightsPanel';
 import StudySchedulePanel from '../components/StudySchedulePanel';
+import FeedbackSection from '../components/FeedbackSection';
 import { useViewport } from '../hooks/useViewport';
 
 const pageVariants = {
@@ -226,37 +227,67 @@ export default function ResultPage() {
               {subject} · {examDate}
             </p>
           </div>
-          <button
-            onClick={handleDownloadPlan}
-            title="Download plan as PDF"
-            style={{
-              flexShrink: 0,
-              marginTop: 6,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              background: '#FFFFFF',
-              border: '1.5px solid #E0E0E8',
-              borderRadius: 999,
-              padding: '8px 16px',
-              fontFamily: "'Sora', sans-serif",
-              fontSize: 13,
-              fontWeight: 500,
-              color: '#6B6B80',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = '#6C63FF';
-              e.currentTarget.style.color = '#6C63FF';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = '#E0E0E8';
-              e.currentTarget.style.color = '#6B6B80';
-            }}
-          >
-            ↓ Download PDF
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => {
+                document.getElementById('feedback-section')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: '#6C63FF',
+                border: '1.5px solid #6C63FF',
+                borderRadius: 999,
+                padding: '8px 16px',
+                fontFamily: "'Sora', sans-serif",
+                fontSize: 13,
+                fontWeight: 500,
+                color: '#FFFFFF',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#5A52D5';
+                e.currentTarget.style.borderColor = '#5A52D5';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = '#6C63FF';
+                e.currentTarget.style.borderColor = '#6C63FF';
+              }}
+            >
+              ⭐ Give Feedback!
+            </button>
+            <button
+              onClick={handleDownloadPlan}
+              title="Download plan as PDF"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: '#FFFFFF',
+                border: '1.5px solid #E0E0E8',
+                borderRadius: 999,
+                padding: '8px 16px',
+                fontFamily: "'Sora', sans-serif",
+                fontSize: 13,
+                fontWeight: 500,
+                color: '#6B6B80',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = '#6C63FF';
+                e.currentTarget.style.color = '#6C63FF';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = '#E0E0E8';
+                e.currentTarget.style.color = '#6B6B80';
+              }}
+            >
+              ↓ Download PDF
+            </button>
+          </div>
         </div>
 
         <ModeBanner mode={plan.mode} />
@@ -432,6 +463,11 @@ export default function ResultPage() {
               <ArrowRightIcon size={16} />
             </span>
           </button>
+        </div>
+
+        {/* Feedback Section */}
+        <div id="feedback-section">
+          <FeedbackSection />
         </div>
       </div>
     </motion.div>

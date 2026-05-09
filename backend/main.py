@@ -1,7 +1,7 @@
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import plan, upload, chat, analytics, auth
+from app.routes import plan, upload, chat, analytics, auth, feedback
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,6 +33,7 @@ app.include_router(upload.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
+app.include_router(feedback.router, prefix="/api", tags=["Feedback"])
 
 @app.get("/")
 def read_root():
