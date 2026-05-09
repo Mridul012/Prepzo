@@ -17,9 +17,28 @@ export const uploadPdf = (file) => {
 // Generate exam preparation plan
 export const generatePlan = (data) => api.post('/generate-plan', data);
 
-// AI chatbot — context-aware conversation
-export const chatWithBot = (messages, subject, examDate, mode, topics, questionsContext) =>
-  api.post('/chat', { messages, subject, examDate, mode, topics, questionsContext });
+// AI chatbot — context-aware conversation with full plan context
+export const chatWithBot = (
+  messages,
+  subject,
+  examDate,
+  mode,
+  topics,
+  questionsContext,
+  studySchedule,
+  topicInsights,
+) =>
+  api.post('/chat', {
+    messages,
+    subject,
+    examDate,
+    mode,
+    topics,
+    questionsContext,
+    // Enhanced context: study schedule (first 5 days) + ML predictions
+    studySchedule: studySchedule?.slice(0, 5) ?? null,
+    topicInsights: topicInsights ?? null,
+  });
 
 // Analytics — get platform stats
 export const getAnalytics = () => api.get('/analytics');

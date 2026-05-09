@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from app.models.schemas import GeneratePlanRequest, GeneratePlanResponse, Question, TopicInsight
 from app.services.deadline_service import calculate_deadline_mode, assign_topic_weights, build_strategy
 from app.services.groq_service import (
@@ -30,7 +30,6 @@ def _compute_focus_topics(questions: list, weights: dict, mode: str) -> list:
     mode_limits = {"survival": 3, "balanced": 5, "full": 8}
     limit = mode_limits.get(mode, 5)
 
-    # Aggregate probability scores per topic
     topic_probs: dict = {}
     for q in questions:
         t = q.topic
@@ -39,14 +38,12 @@ def _compute_focus_topics(questions: list, weights: dict, mode: str) -> list:
             topic_probs[t] = []
         topic_probs[t].append(p)
 
-    # Blend avg-probability + weight into a single score
     topic_scores: dict = {}
     for t, probs in topic_probs.items():
         avg_prob = sum(probs) / len(probs)
         w = weights.get(t, 0.5)
         topic_scores[t] = round((avg_prob * 0.6) + (w * 0.4), 3)
 
-    # Ensure high-weight topics that didn't make it into questions still appear
     for t, w in weights.items():
         if t not in topic_scores and w >= 0.7:
             topic_scores[t] = round(w * 0.4, 3)
@@ -57,85 +54,94 @@ def _compute_focus_topics(questions: list, weights: dict, mode: str) -> list:
 
 @router.post("/generate-plan", response_model=GeneratePlanResponse)
 async def generate_plan(request: GeneratePlanRequest):
-    # Step 1: Determine mode from exam deadline
-    mode = calculate_deadline_mode(request.examDate)
+    try:
+        # Step 1: Determine mode from exam deadline
+        mode = calculate_deadline_mode(request.examDate)
 
-    # Step 2: Compute rule-based Pareto weights per mode
-    rule_weights = assign_topic_weights(request.topics, mode)
+        # Step 2: Compute rule-based Pareto weights per mode
+        rule_weights = assign_topic_weights(request.topics, mode)
 
-    # Step 3: Blend in ML-derived TF-IDF weights if PDF was provided
-    if request.pdfText:
-        ml_weights = compute_topic_weights_tfidf(request.topics, request.pdfText)
-        weights = merge_weights(rule_weights, ml_weights, ml_ratio=0.5)
-    else:
-        weights = rule_weights
+        # Step 3: Blend in ML-derived TF-IDF weights if PDF was provided
+        if request.pdfText:
+            ml_weights = compute_topic_weights_tfidf(request.topics, request.pdfText)
+            weights = merge_weights(rule_weights, ml_weights, ml_ratio=0.5)
+        else:
+            weights = rule_weights
 
-    # Step 4: ML Model 2 — Predict question types per topic using Naive Bayes
-    raw_insights = predict_question_types_batch(request.topics)
-    topic_insights = {
-        topic: TopicInsight(**data) for topic, data in raw_insights.items()
-    }
+        # Step 4: ML Model 2 — Predict question types per topic using Naive Bayes
+        raw_insights = predict_question_types_batch(request.topics)
+        topic_insights = {
+            topic: TopicInsight(**data) for topic, data in raw_insights.items()
+        }
 
-    # Step 5: Generate questions — pass weights + ML insights so Groq obeys predictions
-    raw_questions = generate_questions(
-        subject=request.subject,
-        topics=request.topics,
-        mode=mode,
-        weights=weights,
-        pdf_text=request.pdfText,
-        topic_insights=topic_insights,
-    )
-
-    # Step 6: Apply mode-aware priority scoring using blended weights
-    parsed_questions = parse_questions_from_response(raw_questions, weights, mode)
-
-    # Step 7: Convert to Pydantic models, skip any that fail validation
-    questions = []
-    for q in parsed_questions:
-        try:
-            questions.append(Question(**q))
-        except Exception as e:
-            logger.warning("[Plan] Skipping invalid question: %s | data: %s", e, q)
-
-    # Last-resort safety net: if every question failed Pydantic validation,
-    # inject deterministic fallbacks so the response is never an empty plan.
-    if not questions:
-        logger.error(
-            "[Plan] All %d questions failed Pydantic validation — injecting fallbacks",
-            len(parsed_questions),
+        # Step 5: Generate questions — pass weights + ML insights so Groq obeys predictions
+        raw_questions = generate_questions(
+            subject=request.subject,
+            topics=request.topics,
+            mode=mode,
+            weights=weights,
+            pdf_text=request.pdfText,
+            topic_insights=topic_insights,
         )
-        fallback_raw = _build_fallback_questions(request.subject, request.topics, mode)
-        fallback_parsed = parse_questions_from_response(fallback_raw, weights, mode)
-        for q in fallback_parsed:
+
+        # Step 6: Apply mode-aware priority scoring using blended weights
+        parsed_questions = parse_questions_from_response(raw_questions, weights, mode)
+
+        # Step 7: Convert to Pydantic models, skip any that fail validation
+        questions = []
+        for q in parsed_questions:
             try:
                 questions.append(Question(**q))
             except Exception as e:
-                logger.error("[Plan] Fallback question also failed validation: %s", e)
+                logger.warning("[Plan] Skipping invalid question: %s | data: %s", e, q)
 
-    logger.info(
-        "[Plan] subject=%r mode=%s questions=%d",
-        request.subject, mode, len(questions),
-    )
+        # Last-resort safety net: if every question failed Pydantic validation
+        if not questions:
+            logger.error(
+                "[Plan] All %d questions failed Pydantic validation — injecting fallbacks",
+                len(parsed_questions),
+            )
+            fallback_raw = _build_fallback_questions(request.subject, request.topics, mode)
+            fallback_parsed = parse_questions_from_response(fallback_raw, weights, mode)
+            for q in fallback_parsed:
+                try:
+                    questions.append(Question(**q))
+                except Exception as e:
+                    logger.error("[Plan] Fallback question also failed validation: %s", e)
 
-    # Step 8: Derive focusTopics from actual AI output + weights (never empty)
-    focus_topics = _compute_focus_topics(questions, weights, mode)
+        logger.info(
+            "[Plan] subject=%r mode=%s questions=%d",
+            request.subject, mode, len(questions),
+        )
 
-    # Step 9: ML Model 4 — Generate SM-2 Spaced Repetition Study Schedule
-    study_schedule = generate_study_schedule(
-        topics=request.topics,
-        exam_date=request.examDate,
-        mode=mode,
-        weights=weights,
-    )
+        # Step 8: Derive focusTopics from actual AI output + weights
+        focus_topics = _compute_focus_topics(questions, weights, mode)
 
-    # Step 10: Record analytics (single call — no double counting)
-    record_plan(request.subject, mode)
+        # Step 9: ML Model 4 — Generate SM-2 Spaced Repetition Study Schedule
+        study_schedule = generate_study_schedule(
+            topics=request.topics,
+            exam_date=request.examDate,
+            mode=mode,
+            weights=weights,
+        )
 
-    return GeneratePlanResponse(
-        mode=mode,
-        focusTopics=focus_topics,
-        strategy=build_strategy(mode),
-        questions=questions,
-        topicInsights=topic_insights,
-        studySchedule=study_schedule,
-    )
+        # Step 10: Record analytics
+        record_plan(request.subject, mode)
+
+        return GeneratePlanResponse(
+            mode=mode,
+            focusTopics=focus_topics,
+            strategy=build_strategy(mode),
+            questions=questions,
+            topicInsights=topic_insights,
+            studySchedule=study_schedule,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("[Plan] Unexpected error generating plan: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate the study plan. Please try again.",
+        )

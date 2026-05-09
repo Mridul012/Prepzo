@@ -816,8 +816,18 @@ def build_chatbot_system_prompt(
     topics: list = None,
     questions_context: list = None,
     exam_date: str = None,
+    study_schedule: list = None,
+    topic_insights: dict = None,
 ) -> str:
-    """Assemble a rich, context-aware system prompt for the chatbot."""
+    """
+    Assemble a rich, context-aware system prompt for the chatbot.
+
+    Includes:
+    - Subject, date, mode + coaching tone
+    - Generated questions grouped by priority (must / should / optional)
+    - ML Naive Bayes question-type predictions per topic
+    - First 5 days of the SM-2 study schedule
+    """
     parts = [_CHATBOT_BASE]
 
     if subject:
@@ -827,22 +837,76 @@ def build_chatbot_system_prompt(
     if mode:
         coaching = _MODE_COACHING.get(mode, "")
         parts.append(f"STUDY MODE: {mode.upper()} — {coaching}")
-    if topics:
-        parts.append(f"TOPICS IN STUDY PLAN: {', '.join(topics)}")
+
+    # Group questions by priority so the bot can answer "what should I revise first?"
     if questions_context:
-        parts.append(
-            "\nGENERATED EXAM QUESTIONS "
-            "(reference these when the student asks about specific questions):"
-        )
-        for i, q in enumerate(questions_context[:12], 1):
+        must = [q for q in questions_context if q.get("priority") == "must"]
+        should = [q for q in questions_context if q.get("priority") == "should"]
+        optional = [q for q in questions_context if q.get("priority") == "optional"]
+
+        def _fmt_q(i, q):
             topic = q.get("topic", "")
             question = q.get("question", "")
-            prob = q.get("probability", 0)
             try:
-                prob_label = f"{float(prob):.0%}"
+                prob_label = f"{float(q.get('probability', 0)):.0%}"
             except (ValueError, TypeError):
                 prob_label = "N/A"
-            parts.append(f"  Q{i}. [{topic}] {question} (exam probability: {prob_label})")
+            return f"  Q{i}. [{topic}] {question} (probability: {prob_label})"
+
+        parts.append("\nGENERATED EXAM QUESTIONS BY PRIORITY:")
+        counter = 1
+        if must:
+            parts.append("  🔴 MUST DO — memorise these, highest exam likelihood:")
+            for q in must[:8]:
+                parts.append(_fmt_q(counter, q))
+                counter += 1
+        if should:
+            parts.append("  🟡 SHOULD DO — important, good ROI:")
+            for q in should[:6]:
+                parts.append(_fmt_q(counter, q))
+                counter += 1
+        if optional:
+            parts.append("  ⚪ OPTIONAL — if time allows:")
+            for q in optional[:4]:
+                parts.append(_fmt_q(counter, q))
+                counter += 1
+
+        if topics:
+            parts.append(f"\nFOCUS TOPICS: {', '.join(topics)}")
+
+    elif topics:
+        parts.append(f"\nTOPICS IN STUDY PLAN: {', '.join(topics)}")
+
+    # ML Naive Bayes question type predictions
+    if topic_insights:
+        parts.append("\nML QUESTION TYPE PREDICTIONS (Naive Bayes — use when asked about topic format):")
+        for topic, insight in list(topic_insights.items())[:10]:
+            if isinstance(insight, dict):
+                predicted = insight.get("predicted_type", "theory")
+                conf = insight.get("confidence", {})
+                top_conf = max(conf.values()) if conf else None
+                conf_str = f" ({top_conf:.0%} confidence)" if top_conf else ""
+                parts.append(f"  - {topic}: likely {predicted}{conf_str}")
+
+    # Study schedule summary (first 5 days to avoid token bloat)
+    if study_schedule:
+        parts.append("\nSTUDY SCHEDULE (use when asked 'when should I study X' or 'how much time do I have'):")
+        for day in study_schedule[:5]:
+            label = day.get("label", f"Day {day.get('day', '?')}")
+            date = day.get("date", "")
+            total_min = day.get("totalMinutes", 0)
+            day_topics = day.get("topics", [])
+            topic_summary = ", ".join(
+                f"{t.get('name', '')} ({t.get('action', 'study')} {t.get('duration_minutes', 0)}min)"
+                for t in day_topics[:4]
+            )
+            parts.append(f"  {label} ({date}): {topic_summary} — {total_min}min total")
+
+    parts.append(
+        "\nWhen a student asks 'what should I revise first?' → reference MUST DO questions ordered by probability."
+        "\nWhen asked about question format for a topic → cite the ML prediction."
+        "\nWhen asked about time/schedule → reference the study schedule."
+    )
 
     return "\n".join(parts)
 
@@ -858,13 +922,15 @@ def chat_with_groq(
     topics: list = None,
     questions_context: list = None,
     exam_date: str = None,
+    study_schedule: list = None,
+    topic_insights: dict = None,
 ) -> str:
     """
     Context-aware chatbot with token-safe message capping.
 
-    Injects full exam context (subject, mode, topics, generated questions)
-    into the system prompt so the bot can explain specific generated questions
-    and calibrate its coaching style to the student's urgency level.
+    Injects full exam context (subject, mode, topics, generated questions,
+    ML predictions, study schedule) into the system prompt so the bot can
+    explain specific questions, cite ML predictions, and reference the schedule.
     """
     if not client:
         return (
@@ -872,11 +938,9 @@ def chat_with_groq(
             "Please add your GROQ_API_KEY to the .env file to enable the chatbot."
         )
 
-    # Cap conversation history to prevent context window overflow.
-    # Always keep the most recent messages (tail), not the oldest (head).
     if len(messages) > _MAX_CHAT_HISTORY:
         logger.debug(
-            "[Groq] Chatbot: trimming messages from %d to %d to stay within context window",
+            "[Groq] Chatbot: trimming messages from %d to %d",
             len(messages), _MAX_CHAT_HISTORY,
         )
         messages = messages[-_MAX_CHAT_HISTORY:]
@@ -887,6 +951,8 @@ def chat_with_groq(
         topics=topics,
         questions_context=questions_context,
         exam_date=exam_date,
+        study_schedule=study_schedule,
+        topic_insights=topic_insights,
     )
 
     full_messages = [{"role": "system", "content": system_content}] + messages
