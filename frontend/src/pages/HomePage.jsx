@@ -149,8 +149,8 @@ export default function HomePage(){
                 <span style={{width:6,height:6,borderRadius:'50%',background:C.accent}}/>
                 <span style={{fontFamily:fontM,fontSize:11,color:'#4A44AA',letterSpacing:'0.07em'}}>AI-POWERED EXAM INTELLIGENCE</span>
               </div>
-              <h1 style={{fontFamily:fontD,fontWeight:700,fontSize:'clamp(38px,5vw,68px)',color:C.text,letterSpacing:'-0.04em',lineHeight:1.06,marginBottom:24,maxWidth:560}}>
-                Ace your exam.{' '}<span style={{color:C.accent}}>Not just</span>{' '}study for it.
+              <h1 style={{fontFamily:fontD,fontWeight:700,fontSize:'clamp(38px,5vw,68px)',color:C.text,letterSpacing:'-0.04em',lineHeight:1.06,marginBottom:24,maxWidth:650}}>
+                Less time. More marks.{' '}<span style={{color:C.accent}}>AI knows</span>{' '}what to study.
               </h1>
               <p style={{fontFamily:fontD,fontSize:'clamp(15px,1.8vw,18px)',color:C.muted,lineHeight:1.65,maxWidth:420,marginBottom:40}}>
                 Tell Prepzo your subject and exam date. Get a precision study plan ranked by what's <em>actually</em> likely to appear.
