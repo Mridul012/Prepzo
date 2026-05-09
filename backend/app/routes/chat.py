@@ -25,6 +25,9 @@ class ChatRequest(BaseModel):
     # Enhanced context fields for deeper AI awareness
     studySchedule: Optional[List[Dict[str, Any]]] = None
     topicInsights: Optional[Dict[str, Any]] = None
+    # Deep context: past-paper pattern analysis + weak topic identification
+    patternAnalysis: Optional[Dict[str, Any]] = None
+    weakTopics: Optional[List[str]] = None
 
 
 @router.post("/chat")
@@ -32,9 +35,12 @@ async def chat_with_bot(request: ChatRequest):
     """
     Context-aware chatbot endpoint.
 
-    Accepts optional mode, topics, questionsContext, studySchedule, and
-    topicInsights so the AI can explain specific generated questions, reference
-    the study schedule, and cite ML predictions in its coaching.
+    Accepts the full study plan context so the AI can:
+    - Explain specific generated questions and reference priorities
+    - Cite ML Naive Bayes predictions for question types
+    - Reference the SM-2 spaced-repetition study schedule
+    - Identify repeating patterns from past-paper analysis
+    - Prioritise revision for weak topics
     """
     try:
         msgs = [{"role": m.role, "content": m.content} for m in request.messages]
@@ -48,6 +54,8 @@ async def chat_with_bot(request: ChatRequest):
             exam_date=request.examDate,
             study_schedule=request.studySchedule,
             topic_insights=request.topicInsights,
+            pattern_analysis=request.patternAnalysis,
+            weak_topics=request.weakTopics,
         )
 
         record_event("chat_msg_sent")

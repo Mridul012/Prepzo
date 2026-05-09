@@ -6,6 +6,7 @@ import ChatBubble from '../components/ChatBubble';
 import { chatWithBot } from '../services/api';
 import { track } from '../utils/analytics';
 import { useViewport } from '../hooks/useViewport';
+import { useStudyPlanContext } from '../hooks/useStudyPlanContext';
 
 const pageVariants = {
   initial: { opacity: 0 },
@@ -41,6 +42,12 @@ export default function ChatPage() {
   const subject = rawState?.subject || stored?.subject || '';
   const examDate = rawState?.examDate || stored?.examDate || '';
 
+  // Pattern analysis is stored separately (comes from PDF upload, not plan generation)
+  const patternAnalysis = stored?.patternAnalysis || null;
+
+  // Build the structured context object for the chatbot (memoised)
+  const chatContext = useStudyPlanContext(plan, subject, examDate, patternAnalysis);
+
   useEffect(() => {
     if (!plan) navigate('/input', { replace: true });
   }, []); // only on mount — don't re-run on every render
@@ -75,16 +82,7 @@ export default function ChatPage() {
     track.chatbotMessageSent(textToSend.length);
 
     try {
-      const response = await chatWithBot(
-        newMessages,
-        subject,
-        examDate,
-        plan.mode,
-        plan.focusTopics,
-        plan.questions,
-        plan.studySchedule,
-        plan.topicInsights,
-      );
+      const response = await chatWithBot(newMessages, chatContext);
       setMessages([...newMessages, { role: 'assistant', content: response.data.reply, isNew: true }]);
     } catch {
       setMessages([

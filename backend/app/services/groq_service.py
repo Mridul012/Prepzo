@@ -818,6 +818,8 @@ def build_chatbot_system_prompt(
     exam_date: str = None,
     study_schedule: list = None,
     topic_insights: dict = None,
+    pattern_analysis: dict = None,
+    weak_topics: list = None,
 ) -> str:
     """
     Assemble a rich, context-aware system prompt for the chatbot.
@@ -827,6 +829,8 @@ def build_chatbot_system_prompt(
     - Generated questions grouped by priority (must / should / optional)
     - ML Naive Bayes question-type predictions per topic
     - First 5 days of the SM-2 study schedule
+    - Past-paper pattern analysis (repeating patterns, category breakdown, correlations)
+    - Weak topics identified from low-probability questions
     """
     parts = [_CHATBOT_BASE]
 
@@ -847,11 +851,13 @@ def build_chatbot_system_prompt(
         def _fmt_q(i, q):
             topic = q.get("topic", "")
             question = q.get("question", "")
+            qtype = q.get("type", "theory")
+            difficulty = q.get("difficulty", "medium")
             try:
                 prob_label = f"{float(q.get('probability', 0)):.0%}"
             except (ValueError, TypeError):
                 prob_label = "N/A"
-            return f"  Q{i}. [{topic}] {question} (probability: {prob_label})"
+            return f"  Q{i}. [{topic}] {question} (type: {qtype}, difficulty: {difficulty}, probability: {prob_label})"
 
         parts.append("\nGENERATED EXAM QUESTIONS BY PRIORITY:")
         counter = 1
@@ -879,7 +885,7 @@ def build_chatbot_system_prompt(
 
     # ML Naive Bayes question type predictions
     if topic_insights:
-        parts.append("\nML QUESTION TYPE PREDICTIONS (Naive Bayes — use when asked about topic format):")
+        parts.append("\nML QUESTION TYPE PREDICTIONS (Naive Bayes — cite when asked about topic format):")
         for topic, insight in list(topic_insights.items())[:10]:
             if isinstance(insight, dict):
                 predicted = insight.get("predicted_type", "theory")
@@ -890,7 +896,7 @@ def build_chatbot_system_prompt(
 
     # Study schedule summary (first 5 days to avoid token bloat)
     if study_schedule:
-        parts.append("\nSTUDY SCHEDULE (use when asked 'when should I study X' or 'how much time do I have'):")
+        parts.append("\nSTUDY SCHEDULE (cite when asked 'when should I study X' or 'how much time do I have'):")
         for day in study_schedule[:5]:
             label = day.get("label", f"Day {day.get('day', '?')}")
             date = day.get("date", "")
@@ -902,10 +908,60 @@ def build_chatbot_system_prompt(
             )
             parts.append(f"  {label} ({date}): {topic_summary} — {total_min}min total")
 
+    # Past-paper pattern analysis (cite when asked about repeating topics or exam trends)
+    if pattern_analysis and pattern_analysis.get("totalQuestionsAnalyzed", 0) > 0:
+        total_analysed = pattern_analysis["totalQuestionsAnalyzed"]
+        parts.append(f"\nPAST PAPER PATTERN ANALYSIS ({total_analysed} questions analysed from uploaded PDF):")
+
+        # Category breakdown — e.g. "Implementation/Coding: 35%, Definition/Recall: 25%"
+        cat_breakdown = pattern_analysis.get("categoryBreakdown", {})
+        if cat_breakdown:
+            parts.append("  QUESTION TYPE DISTRIBUTION:")
+            sorted_cats = sorted(cat_breakdown.items(), key=lambda x: -x[1])
+            for cat, pct in sorted_cats[:6]:
+                parts.append(f"    - {cat}: {pct}%")
+
+        # Topic × question type correlations — e.g. "Normalization → MCQ (4x)"
+        topic_corr = pattern_analysis.get("topicCorrelation", {})
+        if topic_corr:
+            parts.append("  TOPIC × QUESTION TYPE CORRELATIONS:")
+            for topic, data in list(topic_corr.items())[:8]:
+                if isinstance(data, dict):
+                    common_type = data.get("most_common_type", "theory")
+                    freq = data.get("frequency", 0)
+                    parts.append(f"    - {topic} → usually {common_type} ({freq}x)")
+
+        # Top repeating patterns — e.g. "Explain normalization forms (appeared 4x, 85% likely)"
+        patterns = pattern_analysis.get("patterns", [])
+        if patterns:
+            parts.append("  TOP REPEATING QUESTION PATTERNS:")
+            for p in patterns[:5]:
+                pattern_text = p.get("pattern", "")
+                category = p.get("category", "General")
+                freq = p.get("frequency", 0)
+                try:
+                    prob = f"{float(p.get('probability', 0)):.0%}"
+                except (ValueError, TypeError):
+                    prob = "N/A"
+                parts.append(f"    - [{category}] {pattern_text} (appeared {freq}x, {prob} likely)")
+
+    # Weak topics — topics where the student needs extra focus
+    if weak_topics:
+        parts.append(f"\nWEAK TOPICS (lowest exam probability — student should prioritise these):")
+        parts.append(f"  {', '.join(weak_topics)}")
+
+    # Conversational intelligence routing — tells the AI exactly what context to use
     parts.append(
-        "\nWhen a student asks 'what should I revise first?' → reference MUST DO questions ordered by probability."
-        "\nWhen asked about question format for a topic → cite the ML prediction."
-        "\nWhen asked about time/schedule → reference the study schedule."
+        "\n── RESPONSE ROUTING RULES ──"
+        "\nWhen a student asks 'what should I revise first?' → reference MUST DO questions, ordered by probability."
+        "\nWhen asked 'which topic has highest probability?' → find the question with highest probability value and cite it."
+        "\nWhen asked about question format for a topic → cite the ML Naive Bayes prediction."
+        "\nWhen asked about time/schedule → reference the study schedule with specific days and durations."
+        "\nWhen asked 'which topics repeat the most?' → cite the PAST PAPER PATTERN ANALYSIS section."
+        "\nWhen asked about coding/theory/MCQ distribution → cite the QUESTION TYPE DISTRIBUTION from pattern analysis."
+        "\nWhen asked 'what are my weak topics?' → cite the WEAK TOPICS list and suggest specific revision actions."
+        "\nWhen asked for practice questions → generate questions similar to MUST DO items, matching the topic's predicted type."
+        "\nAlways ground your answers in the actual data above. Never make up probabilities or schedules."
     )
 
     return "\n".join(parts)
@@ -924,13 +980,16 @@ def chat_with_groq(
     exam_date: str = None,
     study_schedule: list = None,
     topic_insights: dict = None,
+    pattern_analysis: dict = None,
+    weak_topics: list = None,
 ) -> str:
     """
     Context-aware chatbot with token-safe message capping.
 
     Injects full exam context (subject, mode, topics, generated questions,
-    ML predictions, study schedule) into the system prompt so the bot can
-    explain specific questions, cite ML predictions, and reference the schedule.
+    ML predictions, study schedule, pattern analysis, weak topics) into
+    the system prompt so the bot can explain specific questions, cite ML
+    predictions, reference the schedule, and identify repeating patterns.
     """
     if not client:
         return (
@@ -953,6 +1012,8 @@ def chat_with_groq(
         exam_date=exam_date,
         study_schedule=study_schedule,
         topic_insights=topic_insights,
+        pattern_analysis=pattern_analysis,
+        weak_topics=weak_topics,
     )
 
     full_messages = [{"role": "system", "content": system_content}] + messages
@@ -975,3 +1036,4 @@ def chat_with_groq(
             "I encountered an issue processing your request. "
             "Please try again in a moment."
         )
+

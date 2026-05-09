@@ -173,7 +173,7 @@ export default function InputPage() {
         topics,
         pdfText,
       });
-      localStorage.setItem('prepzo_last_result', JSON.stringify({ plan: response.data, subject, examDate }));
+      localStorage.setItem('prepzo_last_result', JSON.stringify({ plan: response.data, subject, examDate, patternAnalysis }));
       track.studyPlanGenerated(
         subject,
         response.data.mode,
